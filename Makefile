@@ -1,7 +1,7 @@
 .PHONY: build
 
 build:
-	go build -o build/iso-stream cmd/main.go
+	go build -o build/iso-stream main.go
 
 clean:
 	rm -rf build/*

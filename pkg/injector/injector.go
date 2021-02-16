@@ -1,5 +1,0 @@
-package injector
-
-import (
-	"io"
-)
