@@ -12,19 +12,21 @@ import (
 )
 
 type RHCOSStreamReader struct {
+	// underlying reader for the actual iso
 	isoReader io.Reader
+	// reader configured to record the ignition info
+	infoReader io.Reader
+	// reader to use for the customized content
+	contentReader io.Reader
+
 	// ignition file info
 	haveIgnitionInfo  bool
 	ignitionInfo      [24]byte // the actual 24 bytes from the underlying iso
 	ignitionAreaStart int64
-	ignitionAreaEnd   int64
-	// current location in the underlying iso
-	location int64
+	ignitionAreaLen   int64
 	// compressed ignition archive bytes reader
 	ignition       io.Reader
 	ignitionLength int
-	// have we read through the entire ignition
-	ignitionEOF bool
 }
 
 // header is inclusive of these bytes
@@ -37,17 +39,23 @@ func NewRHCOSStreamReader(isoReader io.Reader, ignitionContent string) (*RHCOSSt
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create compressed ignition archive")
 	}
-	return &RHCOSStreamReader{
+
+	sr := &RHCOSStreamReader{
 		isoReader:      isoReader,
 		ignition:       bytes.NewReader(ignitionBytes),
 		ignitionLength: len(ignitionBytes),
-	}, nil
-}
+	}
 
-func (r *RHCOSStreamReader) readFromISO(p []byte) (int, error) {
-	count, err := r.isoReader.Read(p)
-	r.location += int64(count)
-	return count, err
+	// set up limit reader for the space before the header
+	b4HeaderReader := io.LimitReader(isoReader, headerStart-1)
+
+	// set up a tee reader to write to the ignition info using a bytes buffer
+	buf := bytes.NewBuffer(sr.ignitionInfo[:])
+	ignitionInfoReader := io.TeeReader(io.LimitReader(isoReader, 24), buf)
+
+	sr.infoReader = io.MultiReader(b4HeaderReader, ignitionInfoReader)
+
+	return sr, nil
 }
 
 func (r *RHCOSStreamReader) transformIgnitionInfo() error {
@@ -57,115 +65,28 @@ func (r *RHCOSStreamReader) transformIgnitionInfo() error {
 	}
 
 	r.ignitionAreaStart = int64(binary.LittleEndian.Uint64(r.ignitionInfo[8:16]))
-	r.ignitionAreaEnd = r.ignitionAreaStart + int64(binary.LittleEndian.Uint64(r.ignitionInfo[16:24]))
+	r.ignitionAreaLen = int64(binary.LittleEndian.Uint64(r.ignitionInfo[16:24]))
 	r.haveIgnitionInfo = true
 
 	return nil
 }
 
-// Will a read of size `size` intersect with the header info given the current location?
-func (r *RHCOSStreamReader) intersectsHeader(size int) bool {
-	startLoc := r.location
-	endLoc := startLoc + int64(size)
-
-	if endLoc < headerStart || startLoc > headerEnd {
-		return false
-	}
-
-	return true
-}
-
 func (r *RHCOSStreamReader) Read(p []byte) (count int, err error) {
-	bufLen := len(p)
-	if bufLen == 0 {
-		count = 0
-		err = nil
-		return
-	}
-
-	startLoc := r.location
-	endLoc := startLoc + int64(bufLen)
-
-	// location where the next byte should be written in p
-	writeStart := func() int64 {
-		return r.location - startLoc
-	}
-
-	readAndCount := func(s []byte) {
-		var c int
-		c, err = r.readFromISO(s)
-		count += c
-	}
-
 	if !r.haveIgnitionInfo {
-		if !r.intersectsHeader(bufLen) {
-			// entire read is before the header
-			// (1)
-			readAndCount(p[writeStart():])
-			return
-		} else {
-			// if we are going to read just to or past the end of the header, handle the header first, then move on
-			// this is so we will be able to find the start of the ignition area in case the one read would cover both
-			if endLoc >= headerEnd {
-				// (3), (4)
-				// read from start location to end of header into "p"
-				sliceEnd := headerEnd - startLoc + 1
-				pSlice := p[writeStart():sliceEnd]
-
-				readAndCount(pSlice)
-				if count != len(pSlice) {
-					// were not able to read entire header
-					// return and we will address this in the next call if the error is recoverable
-					return
-				}
-
-				// now have the entire header between r.ignitionInfo and pSlice
-				// set r.ignitionInfo properly
-				// we know the end of pSlice is the end of the header
-				// So either pSlice contains the entire header or only the end
-
-				pSrc := pSlice
-				if startLoc < headerStart {
-					pSrc = pSlice[headerStart-startLoc:]
-				}
-				infoDst := r.ignitionInfo[:]
-				if startLoc > headerStart {
-					infoDst = r.ignitionInfo[startLoc-headerStart:]
-				}
-				copy(infoDst, pSrc)
-				err = r.transformIgnitionInfo()
-				if err != nil {
-					return
-				}
-			} else {
-				// (2), (6)
-				// won't finish the header in this call to Read
-				readAndCount(p[writeStart():])
-				return
-			}
+		n, err := r.infoReader.Read(p)
+		if err == io.EOF {
+			err = r.transformIgnitionInfo()
 		}
+		return n, err
 	}
 
-	// separate case where we might have read the header as a part of this read
-	if r.haveIgnitionInfo {
-		readAndCount(p[writeStart():])
-		return
+	if r.contentReader == nil {
+		beforeIgnitionReader := io.LimitReader(r.isoReader, r.ignitionAreaStart - headerEnd)
+		// TODO figure out how to advance r.isoReader past the ignition while reading the ignition
+		afterIgnitionReader :=
 	}
-	//cases
-	//  don't have ignition info
-	//    will encounter header
-	//      read header bytes into ignitionInfo
-	//    won't encounter header
-	//      read len(p)
-	//    finished reading header
-	//      evaluate ignitionInfo and set offset and length (maybe use start and end here?)
-	//  have ignition info
-	//    will encounter ignition space
-	//      read from ignition reader
-	//      also increment location and nop read from isoReader
-	//  ...
-	readAndCount(p[writeStart():])
-	return
+
+	return r.contentReader.Read(p)
 }
 
 func ignitionImageArchive(ignitionConfig string) ([]byte, error) {
