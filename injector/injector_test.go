@@ -9,9 +9,9 @@ import (
 
 const isoPath = `../isos/rhcos-4.6.1-x86_64-live.x86_64.iso`
 const ignitionStart = 8302592
-const ignitionEnd = 8564736
+const ignitionLength = 262144
 
-func TestNewRHCOSStreamReader(t *testing.T) {
+func TestEmptyIgntitionAndStreamSize(t *testing.T) {
 	iso, err := os.Open(isoPath)
 	if err != nil {
 		t.Fatalf("Failed to open iso: %v", err)
@@ -37,7 +37,7 @@ func TestNewRHCOSStreamReader(t *testing.T) {
 	if r.ignitionAreaStart != ignitionStart {
 		t.Fatalf("Read incorrect ignition start, expected %d, got %d", ignitionStart, r.ignitionAreaStart)
 	}
-	if r.ignitionAreaEnd != ignitionEnd {
-		t.Fatalf("Read incorrect ignition end, expected %d, got %d", ignitionEnd, r.ignitionAreaEnd)
+	if r.ignitionAreaLength != ignitionLength {
+		t.Fatalf("Read incorrect ignition length, expected %d, got %d", ignitionLength, r.ignitionAreaLength)
 	}
 }

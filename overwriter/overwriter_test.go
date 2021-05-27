@@ -125,3 +125,20 @@ func TestOverwriteOverEnd(t *testing.T) {
 		t.Fatalf("Over end test failed: %v", err)
 	}
 }
+
+func TestOverlapDetect(t *testing.T) {
+	base := strings.NewReader(testBaseString)
+	range1 := &Range{
+		Content: strings.NewReader("12345"),
+		Offset:  5,
+	}
+	range2 := &Range{
+		Content: strings.NewReader("0000000000"),
+		Offset:  7,
+	}
+
+	_, err := NewOverwriteReader(base, range1, range2)
+	if err == nil {
+		t.Fatalf("Expected overlapping ranges to fail")
+	}
+}

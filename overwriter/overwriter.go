@@ -15,12 +15,9 @@ type Range struct {
 }
 
 func (r *Range) locationInRange(location int64) bool {
-	fmt.Printf("location in range: location: %d, offset: %d, length: %d\n", location, r.Offset, r.length)
 	if location >= r.Offset && location <= r.Offset+r.length {
-		fmt.Printf("location in range = true\n")
 		return true
 	}
-	fmt.Printf("location in range = false\n")
 	return false
 }
 
@@ -34,7 +31,6 @@ func (r *Range) setLength() error {
 		return err
 	}
 
-	fmt.Printf("Setting range length = %d\n", size)
 	r.length = size
 	return nil
 }
@@ -99,10 +95,7 @@ func NewOverwriteReader(baseReader io.Reader, overwriters ...*Range) (*Overwrite
 func (r *OverwriteReader) Read(p []byte) (int, error) {
 	// does the current range reader include the current location?
 	if r.readFromOverrideRange() {
-		fmt.Printf("Reading from override range\n")
-		fmt.Printf("len(p) = %d\n", len(p))
 		count, err := r.currentRange().Content.Read(p)
-		fmt.Printf("got from current range: count = %d, err = %v\n", count, err)
 
 		// increment the underlying reader by count
 		skipped, copyErr := io.CopyN(ioutil.Discard, r.base, int64(count))
@@ -110,7 +103,6 @@ func (r *OverwriteReader) Read(p []byte) (int, error) {
 		if err != nil && err != io.EOF {
 			return count, err
 		} else if err == io.EOF {
-			fmt.Printf("Next Range!\n")
 			// increment to the next range if we've reached the end of this one
 			r.currentRangeIndex++
 		}
@@ -124,7 +116,6 @@ func (r *OverwriteReader) Read(p []byte) (int, error) {
 		}
 
 		r.location += int64(count)
-		fmt.Printf("Returning %d bytes as %s from override\n", count, p)
 		return count, nil
 	}
 
@@ -136,13 +127,11 @@ func (r *OverwriteReader) Read(p []byte) (int, error) {
 
 	count, err := r.base.Read(readBuf)
 	r.location += int64(count)
-	fmt.Printf("Returning %d bytes as %s from base\n", count, p)
 	return count, err
 }
 
 func (r *OverwriteReader) readFromOverrideRange() bool {
 	if !r.haveMoreRanges() {
-		fmt.Printf("No more ranges\n")
 		return false
 	}
 	return r.currentRange().locationInRange(r.location)

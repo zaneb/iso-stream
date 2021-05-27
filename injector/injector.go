@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/carbonin/iso-stream/overwriter"
 	"github.com/cavaliercoder/go-cpio"
 	"github.com/pkg/errors"
 )
@@ -20,13 +21,14 @@ type RHCOSStreamReader struct {
 	contentReader io.Reader
 
 	// ignition file info
-	haveIgnitionInfo  bool
-	ignitionInfo      [24]byte // the actual 24 bytes from the underlying iso
-	ignitionAreaStart int64
-	ignitionAreaLen   int64
+	haveIgnitionInfo   bool
+	ignitionInfo       *bytes.Buffer
+	ignitionAreaStart  int64
+	ignitionAreaLength int64
+
 	// compressed ignition archive bytes reader
-	ignition       io.Reader
-	ignitionLength int
+	ignition       io.ReadSeeker
+	ignitionLength int64
 }
 
 // header is inclusive of these bytes
@@ -42,16 +44,16 @@ func NewRHCOSStreamReader(isoReader io.Reader, ignitionContent string) (*RHCOSSt
 
 	sr := &RHCOSStreamReader{
 		isoReader:      isoReader,
+		ignitionInfo:   new(bytes.Buffer),
 		ignition:       bytes.NewReader(ignitionBytes),
-		ignitionLength: len(ignitionBytes),
+		ignitionLength: int64(len(ignitionBytes)),
 	}
 
 	// set up limit reader for the space before the header
-	b4HeaderReader := io.LimitReader(isoReader, headerStart-1)
+	b4HeaderReader := io.LimitReader(isoReader, headerStart)
 
 	// set up a tee reader to write to the ignition info using a bytes buffer
-	buf := bytes.NewBuffer(sr.ignitionInfo[:])
-	ignitionInfoReader := io.TeeReader(io.LimitReader(isoReader, 24), buf)
+	ignitionInfoReader := io.TeeReader(io.LimitReader(isoReader, 24), sr.ignitionInfo)
 
 	sr.infoReader = io.MultiReader(b4HeaderReader, ignitionInfoReader)
 
@@ -59,19 +61,34 @@ func NewRHCOSStreamReader(isoReader io.Reader, ignitionContent string) (*RHCOSSt
 }
 
 func (r *RHCOSStreamReader) transformIgnitionInfo() error {
-	res := bytes.Compare(r.ignitionInfo[0:8], []byte(coreISOMagic))
-	if res != 0 {
-		return errors.New(fmt.Sprintf("Could not find magic string in object header (%s)", r.ignitionInfo[0:8]))
+	infoBytes := make([]byte, 24)
+	n, err := r.ignitionInfo.Read(infoBytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to read embed area data from buffer")
+	}
+	if n != 24 {
+		return errors.New(fmt.Sprintf("incorrect embed info size, expected 24, got %d", n))
 	}
 
-	r.ignitionAreaStart = int64(binary.LittleEndian.Uint64(r.ignitionInfo[8:16]))
-	r.ignitionAreaLen = int64(binary.LittleEndian.Uint64(r.ignitionInfo[16:24]))
+	res := bytes.Compare(infoBytes[0:8], []byte(coreISOMagic))
+	if res != 0 {
+		return errors.New(fmt.Sprintf("Could not find magic string in object header (%s)", infoBytes[0:8]))
+	}
+
+	r.ignitionAreaStart = int64(binary.LittleEndian.Uint64(infoBytes[8:16]))
+	r.ignitionAreaLength = int64(binary.LittleEndian.Uint64(infoBytes[16:24]))
 	r.haveIgnitionInfo = true
+
+	if r.ignitionAreaLength < r.ignitionLength {
+		return errors.New(fmt.Sprintf("ignition length (%d) exceeds embed area size (%d)", r.ignitionLength, r.ignitionAreaLength))
+	}
 
 	return nil
 }
 
-func (r *RHCOSStreamReader) Read(p []byte) (count int, err error) {
+func (r *RHCOSStreamReader) Read(p []byte) (int, error) {
+	var err error
+
 	if !r.haveIgnitionInfo {
 		n, err := r.infoReader.Read(p)
 		if err == io.EOF {
@@ -81,9 +98,14 @@ func (r *RHCOSStreamReader) Read(p []byte) (count int, err error) {
 	}
 
 	if r.contentReader == nil {
-		beforeIgnitionReader := io.LimitReader(r.isoReader, r.ignitionAreaStart - headerEnd)
-		// TODO figure out how to advance r.isoReader past the ignition while reading the ignition
-		afterIgnitionReader :=
+		ignitionRange := &overwriter.Range{
+			Content: r.ignition,
+			Offset:  r.ignitionAreaStart,
+		}
+		r.contentReader, err = overwriter.NewOverwriteReader(r.isoReader, ignitionRange)
+		if err != nil {
+			return 0, errors.Wrapf(err, "failed to create overwrite reader")
+		}
 	}
 
 	return r.contentReader.Read(p)
