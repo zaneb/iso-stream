@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
 
 	"github.com/carbonin/iso-stream/overwriter"
 	"github.com/cavaliercoder/go-cpio"
@@ -37,9 +39,25 @@ const headerEnd = 32767
 const coreISOMagic = "coreiso+"
 
 func NewRHCOSStreamReader(isoReader io.Reader, ignitionContent string) (*RHCOSStreamReader, error) {
+	fmt.Printf("Creating ignition content for '%s'\n", ignitionContent)
 	ignitionBytes, err := ignitionImageArchive(ignitionContent)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create compressed ignition archive")
+	}
+	testPath := "ignitionBytes.img.gz"
+	fmt.Printf("Writing compressed ignition archive to %s\n", testPath)
+	ioutil.WriteFile(testPath, ignitionBytes, 0o644)
+
+	testPath = "ignitionReader.img.gz"
+	f, err := os.Create(testPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, bytes.NewReader(ignitionBytes))
+	if err != nil {
+		return nil, err
 	}
 
 	sr := &RHCOSStreamReader{
@@ -98,9 +116,10 @@ func (r *RHCOSStreamReader) Read(p []byte) (int, error) {
 	}
 
 	if r.contentReader == nil {
+		// Set the offset to the distance to the ignition taking into account that we've already read the system area
 		ignitionRange := &overwriter.Range{
 			Content: r.ignition,
-			Offset:  r.ignitionAreaStart,
+			Offset:  r.ignitionAreaStart - headerEnd,
 		}
 		r.contentReader, err = overwriter.NewOverwriteReader(r.isoReader, ignitionRange)
 		if err != nil {
@@ -121,7 +140,6 @@ func ignitionImageArchive(ignitionConfig string) ([]byte, error) {
 		return nil, errors.Wrap(err, "Failed to write CPIO header")
 	}
 	if _, err := cpioWriter.Write(ignitionBytes); err != nil {
-
 		return nil, errors.Wrap(err, "Failed to write CPIO archive")
 	}
 	if err := cpioWriter.Close(); err != nil {

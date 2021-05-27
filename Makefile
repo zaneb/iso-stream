@@ -6,5 +6,8 @@ build:
 clean:
 	rm -rf build/*
 
-run: clean build
-	./build/iso-edit
+run:
+	go run main.go
+
+test:
+	go test ./...
