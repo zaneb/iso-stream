@@ -96,7 +96,6 @@ func (r *OverwriteReader) Read(p []byte) (int, error) {
 	// does the current range reader include the current location?
 	if r.readFromOverrideRange() {
 		count, err := r.currentRange().Content.Read(p)
-		fmt.Printf("\n\nRead %d bytes from override range:\n%x\n", count, p[0:count])
 
 		// increment the underlying reader by count
 		skipped, copyErr := io.CopyN(ioutil.Discard, r.base, int64(count))
