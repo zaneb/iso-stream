@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/carbonin/iso-stream/overwriter"
+	"github.com/carbonin/overreader"
 	"github.com/cavaliercoder/go-cpio"
 	"github.com/pkg/errors"
 )
@@ -99,11 +99,11 @@ func (r *RHCOSStreamReader) Read(p []byte) (int, error) {
 
 	if r.contentReader == nil {
 		// Set the offset to the distance to the ignition taking into account that we've already read the system area
-		ignitionRange := &overwriter.Range{
+		ignitionRange := &overreader.Range{
 			Content: r.ignition,
 			Offset:  r.ignitionAreaStart - headerEnd - 1,
 		}
-		r.contentReader, err = overwriter.NewOverwriteReader(r.isoReader, ignitionRange)
+		r.contentReader, err = overreader.NewReader(r.isoReader, ignitionRange)
 		if err != nil {
 			return 0, errors.Wrapf(err, "failed to create overwrite reader")
 		}

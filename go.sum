@@ -1,3 +1,5 @@
+github.com/carbonin/overreader v0.0.1 h1:aHQSM/E3nIZtbcngFcEXugdNVO8yeZ8TkixcsOUj0Qo=
+github.com/carbonin/overreader v0.0.1/go.mod h1:49Vf2c7L6mHFdSCGshTxbChRWB+ttsZpXlo7G+61jI0=
 github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e h1:hHg27A0RSSp2Om9lubZpiMgVbvn39bsUmW9U5h0twqc=
 github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e/go.mod h1:oDpT4efm8tSYHXV5tHSdRvBet/b/QzxZ+XyyPehvm3A=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
