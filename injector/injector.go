@@ -115,9 +115,12 @@ func (r *RHCOSStreamReader) Read(p []byte) (int, error) {
 func ignitionImageArchive(ignitionConfig string) ([]byte, error) {
 	ignitionBytes := []byte(ignitionConfig)
 
+	// Run gzip compression
+	compressedBuffer := new(bytes.Buffer)
+	gzipWriter := gzip.NewWriter(compressedBuffer)
+
 	// Create CPIO archive
-	archiveBuffer := new(bytes.Buffer)
-	cpioWriter := cpio.NewWriter(archiveBuffer)
+	cpioWriter := cpio.NewWriter(gzipWriter)
 	if err := cpioWriter.WriteHeader(&cpio.Header{Name: "config.ign", Mode: 0o100_644, Size: int64(len(ignitionBytes))}); err != nil {
 		return nil, errors.Wrap(err, "Failed to write CPIO header")
 	}
@@ -128,12 +131,6 @@ func ignitionImageArchive(ignitionConfig string) ([]byte, error) {
 		return nil, errors.Wrap(err, "Failed to close CPIO archive")
 	}
 
-	// Run gzip compression
-	compressedBuffer := new(bytes.Buffer)
-	gzipWriter := gzip.NewWriter(compressedBuffer)
-	if _, err := gzipWriter.Write(archiveBuffer.Bytes()); err != nil {
-		return nil, errors.Wrap(err, "Failed to gzip ignition config")
-	}
 	if err := gzipWriter.Close(); err != nil {
 		return nil, errors.Wrap(err, "Failed to gzip ignition config")
 	}
