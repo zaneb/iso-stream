@@ -11,7 +11,7 @@ const isoPath = `../isos/rhcos-4.6.1-x86_64-live.x86_64.iso`
 const ignitionStart = 8302592
 const ignitionLength = 262144
 
-func TestEmptyIgntitionAndStreamSize(t *testing.T) {
+func TestEmptyIgnitionAndStreamSize(t *testing.T) {
 	iso, err := os.Open(isoPath)
 	if err != nil {
 		t.Fatalf("Failed to open iso: %v", err)
@@ -33,11 +33,22 @@ func TestEmptyIgntitionAndStreamSize(t *testing.T) {
 	if count != info.Size() {
 		t.Fatalf("Failed to read entire iso file, expected %d bytes, got %d", info.Size(), count)
 	}
+}
 
-	if r.ignitionAreaStart != ignitionStart {
-		t.Fatalf("Read incorrect ignition start, expected %d, got %d", ignitionStart, r.ignitionAreaStart)
+func TestAreaSize(t *testing.T) {
+	iso, err := os.Open(isoPath)
+	if err != nil {
+		t.Fatalf("Failed to open iso: %v", err)
 	}
-	if r.ignitionAreaLength != ignitionLength {
-		t.Fatalf("Read incorrect ignition length, expected %d, got %d", ignitionLength, r.ignitionAreaLength)
+
+	start, length, err := CoreOSIgnitionArea(iso)
+	if err != nil {
+		t.Fatalf("Failed to find ignition area: %v", err)
+	}
+	if start != ignitionStart {
+		t.Fatalf("Read incorrect ignition start, expected %d, got %d", ignitionStart, start)
+	}
+	if length != ignitionLength {
+		t.Fatalf("Read incorrect ignition length, expected %d, got %d", ignitionLength, length)
 	}
 }
