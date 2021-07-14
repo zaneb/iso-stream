@@ -12,26 +12,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-type RHCOSStreamReader struct {
-	// underlying reader for the actual iso
-	isoReader io.Reader
-	// reader to use for the customized content
-	contentReader io.Reader
-
-	// ignition file info
-	ignitionAreaStart  uint64
-	ignitionAreaLength uint64
-
-	// compressed ignition archive bytes reader
-	ignition io.ReadSeeker
-}
-
-// header is inclusive of these bytes
 const headerStart = 32744
 const headerLen = 24
 const coreISOMagic = "coreiso+"
 
-func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (*RHCOSStreamReader, error) {
+func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (io.Reader, error) {
 	ignitionBytes, err := ignitionImageArchive(ignitionContent)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create compressed ignition archive")
@@ -47,14 +32,16 @@ func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (*RHC
 		return nil, errors.New(fmt.Sprintf("ignition length (%d) exceeds embed area size (%d)", ignitionLength, areaLength))
 	}
 
-	sr := &RHCOSStreamReader{
-		isoReader:          isoReader,
-		ignition:           bytes.NewReader(ignitionBytes),
-		ignitionAreaStart:  areaStart,
-		ignitionAreaLength: areaLength,
+	ignitionRange := &overreader.Range{
+		Content: bytes.NewReader(ignitionBytes),
+		Offset:  int64(areaStart),
+	}
+	contentReader, err := overreader.NewReader(isoReader, ignitionRange)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create overwrite reader")
 	}
 
-	return sr, nil
+	return contentReader, nil
 }
 
 func CoreOSIgnitionArea(isoReader io.ReadSeeker) (start, length uint64, err error) {
@@ -75,22 +62,6 @@ func CoreOSIgnitionArea(isoReader io.ReadSeeker) (start, length uint64, err erro
 	length = binary.LittleEndian.Uint64(infoBytes[16:24])
 
 	return
-}
-
-func (r *RHCOSStreamReader) Read(p []byte) (int, error) {
-	if r.contentReader == nil {
-		ignitionRange := &overreader.Range{
-			Content: r.ignition,
-			Offset:  int64(r.ignitionAreaStart),
-		}
-		var err error
-		r.contentReader, err = overreader.NewReader(r.isoReader, ignitionRange)
-		if err != nil {
-			return 0, errors.Wrapf(err, "failed to create overwrite reader")
-		}
-	}
-
-	return r.contentReader.Read(p)
 }
 
 func ignitionImageArchive(ignitionConfig string) ([]byte, error) {
