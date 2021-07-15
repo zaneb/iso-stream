@@ -17,7 +17,7 @@ const headerLen = 24
 const coreISOMagic = "coreiso+"
 
 func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (io.Reader, error) {
-	ignitionBytes, err := ignitionImageArchive(ignitionContent)
+	ignitionReader, err := IgnitionImageArchive(ignitionContent)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create compressed ignition archive")
 	}
@@ -27,13 +27,13 @@ func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (io.R
 		return nil, err
 	}
 
-	ignitionLength := uint64(len(ignitionBytes))
+	ignitionLength := uint64(ignitionReader.Size())
 	if areaLength < ignitionLength {
 		return nil, errors.New(fmt.Sprintf("ignition length (%d) exceeds embed area size (%d)", ignitionLength, areaLength))
 	}
 
 	ignitionRange := &overreader.Range{
-		Content: bytes.NewReader(ignitionBytes),
+		Content: ignitionReader,
 		Offset:  int64(areaStart),
 	}
 	contentReader, err := overreader.NewReader(isoReader, ignitionRange)
@@ -64,7 +64,7 @@ func CoreOSIgnitionArea(isoReader io.ReadSeeker) (start, length uint64, err erro
 	return
 }
 
-func ignitionImageArchive(ignitionConfig string) ([]byte, error) {
+func IgnitionImageArchive(ignitionConfig string) (*bytes.Reader, error) {
 	ignitionBytes := []byte(ignitionConfig)
 
 	// Run gzip compression
@@ -73,7 +73,11 @@ func ignitionImageArchive(ignitionConfig string) ([]byte, error) {
 
 	// Create CPIO archive
 	cpioWriter := cpio.NewWriter(gzipWriter)
-	if err := cpioWriter.WriteHeader(&cpio.Header{Name: "config.ign", Mode: 0o100_644, Size: int64(len(ignitionBytes))}); err != nil {
+	if err := cpioWriter.WriteHeader(&cpio.Header{
+		Name: "config.ign",
+		Mode: 0o100_644,
+		Size: int64(len(ignitionBytes)),
+	}); err != nil {
 		return nil, errors.Wrap(err, "Failed to write CPIO header")
 	}
 	if _, err := cpioWriter.Write(ignitionBytes); err != nil {
@@ -87,5 +91,5 @@ func ignitionImageArchive(ignitionConfig string) ([]byte, error) {
 		return nil, errors.Wrap(err, "Failed to gzip ignition config")
 	}
 
-	return compressedBuffer.Bytes(), nil
+	return bytes.NewReader(compressedBuffer.Bytes()), nil
 }
