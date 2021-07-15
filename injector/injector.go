@@ -11,8 +11,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-const headerStart = 32744
 const headerLen = 24
+const headerStart = (1 << 15) - headerLen
 const coreISOMagic = "coreiso+"
 
 func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (io.ReadSeeker, error) {
