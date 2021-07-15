@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/carbonin/overreader"
 	"github.com/cavaliercoder/go-cpio"
 	"github.com/pkg/errors"
 )
@@ -16,7 +15,7 @@ const headerStart = 32744
 const headerLen = 24
 const coreISOMagic = "coreiso+"
 
-func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (io.Reader, error) {
+func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (io.ReadSeeker, error) {
 	ignitionReader, err := IgnitionImageArchive(ignitionContent)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create compressed ignition archive")
@@ -32,11 +31,12 @@ func NewRHCOSStreamReader(isoReader io.ReadSeeker, ignitionContent string) (io.R
 		return nil, errors.New(fmt.Sprintf("ignition length (%d) exceeds embed area size (%d)", ignitionLength, areaLength))
 	}
 
-	ignitionRange := &overreader.Range{
-		Content: ignitionReader,
-		Offset:  int64(areaStart),
+	ignitionOverlay := Overlay{
+		Reader: ignitionReader,
+		Offset: int64(areaStart),
+		Length: ignitionReader.Size(),
 	}
-	contentReader, err := overreader.NewReader(isoReader, ignitionRange)
+	contentReader, err := NewOverlayReader(isoReader, ignitionOverlay)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create overwrite reader")
 	}
